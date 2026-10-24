@@ -23,8 +23,8 @@ const rounds = [
 ];
 const questions = rounds.flatMap(r=>r.questions);
 const STORE='khs-interview-lab-v1';
-let state={mastered:[],name:'',completedOn:null},round=0,position=0,selected=null;
-try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(s&&Array.isArray(s.mastered)){state.mastered=[...new Set(s.mastered.filter(n=>Number.isInteger(n)&&n>=0&&n<12))];state.name=typeof s.name==='string'?s.name.slice(0,70):'';state.completedOn=typeof s.completedOn==='string'&&Number.isFinite(Date.parse(s.completedOn))?s.completedOn:null;}}catch{}
+let state={mastered:[],name:'',completedOn:null,started:false,cursor:0,finished:false},round=0,position=0;
+try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(s&&Array.isArray(s.mastered)){state.mastered=[...new Set(s.mastered.filter(n=>Number.isInteger(n)&&n>=0&&n<12))];state.started=s.started===true;state.finished=s.finished===true;state.cursor=Number.isInteger(s.cursor)?Math.max(0,Math.min(11,s.cursor)):0;state.name=typeof s.name==='string'?s.name.slice(0,70):'';state.completedOn=typeof s.completedOn==='string'&&Number.isFinite(Date.parse(s.completedOn))?s.completedOn:null;}}catch{}
 const $=id=>document.getElementById(id);
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));}catch{}}
 function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -34,23 +34,38 @@ function update(){
  if(n===12&&!state.completedOn){state.completedOn=new Date().toISOString();save();}
  $('download').disabled=n!==12;
  $('certificate-status').textContent=n===12?'All 12 decisions mastered. Add your name and download your completion certificate.':`Master all 12 decisions to unlock your personalized completion certificate. ${12-n} to go.`;
- $('round-tabs').innerHTML=rounds.map((r,i)=>`<button type="button" data-round="${i}" ${i===round?'aria-current="step"':''}><span>0${i+1} / ${state.mastered.filter(n=>Math.floor(n/3)===i).length} OF 3</span>${r.title}</button>`).join('');
- document.querySelectorAll('[data-round]').forEach(b=>b.addEventListener('click',()=>{round=Number(b.dataset.round);position=0;selected=null;render(true);}));
+
+}
+function showScreen(screen,focus=true){
+ $('intro-screen').hidden=screen!=='intro';$('workspace').hidden=screen!=='activity';$('finish').hidden=screen!=='finish';
+ $('start').innerHTML=state.mastered.length===12?'View your certificate <span aria-hidden="true">→</span>':state.mastered.length?'Continue the assignment <span aria-hidden="true">→</span>':'Start the assignment <span aria-hidden="true">→</span>';
+ if(focus){window.scrollTo(0,0);const target=screen==='activity'?$('question-title'):screen==='finish'?$('finish-title'):$('start');target.focus({preventScroll:true});}
 }
 function render(focus=false){
  update();const r=rounds[round],q=r.questions[position],id=round*3+position,done=state.mastered.includes(id);
- $('activity').innerHTML=`<div class="round-grid"><aside class="field-notes"><p class="eyebrow">FIELD NOTES / 0${round+1}</p><h2>${r.title}</h2><ul>${r.notes.map(n=>`<li>${n}</li>`).join('')}</ul></aside><article class="question-card"><div class="question-meta"><span>DECISION ${String(id+1).padStart(2,'0')} / 12</span><span>${done?'✓ MASTERED':'YOUR CALL'}</span></div><h2 id="question-title" tabindex="-1">${q.title}</h2><p class="context">${q.context}</p><div class="choices" role="group" aria-labelledby="question-title">${q.options.map((s,i)=>`<button type="button" class="choice ${done&&i===q.answer?'correct':''}" data-choice="${i}" ${done?'disabled':''}><span class="letter" aria-hidden="true">${String.fromCharCode(65+i)}</span><span>${s}</span></button>`).join('')}</div><div id="feedback" role="status" aria-live="polite">${done?`<div class="feedback"><strong>Decision mastered.</strong>${q.why[q.answer]}</div>`:''}</div><div class="question-footer"><button class="text-button" id="previous" ${id===0?'disabled':''}>← Previous decision</button><button class="primary" id="next" ${!done?'disabled':''}>${id===11?'Claim your certificate':'Next decision'} <span aria-hidden="true">→</span></button></div></article></div>`;
+ state.cursor=id;save();
+ $('overall').textContent=`Decision ${id+1} of 12 · ${state.mastered.length} complete`;
+ $('activity').innerHTML=`<article class="question-card"><div class="question-meta"><span>PART ${round+1} / 4 · ${r.title}</span><span>${done?'✓ COMPLETE':'YOUR CALL'}</span></div><div class="quick-tip"><strong>REPORTER’S TIP</strong><p>${r.notes[position]}</p></div><h2 id="question-title" tabindex="-1">${q.title}</h2><p class="context">${q.context}</p><p class="answer-instruction">Choose the best next move.</p><div class="choices" role="group" aria-labelledby="question-title">${q.options.map((s,i)=>`<button type="button" class="choice ${done&&i===q.answer?'correct':''}" data-choice="${i}" ${done?'disabled':''}><span class="letter" aria-hidden="true">${String.fromCharCode(65+i)}</span><span>${s}</span></button>`).join('')}</div><div id="feedback" role="status" aria-live="polite">${done?`<div class="feedback"><strong>Decision complete.</strong>${q.why[q.answer]}</div>`:''}</div><div class="question-footer"><button class="text-button" id="previous">${id===0?'← Back to assignment':'← Previous decision'}</button><button class="primary" id="next" ${!done?'disabled':''}>${id===11?'Finish assignment':'Continue'} <span aria-hidden="true">→</span></button></div><p class="next-hint" id="next-hint">${done?'Read the feedback, then continue.':'Answer correctly to continue. You can try again.'}</p></article>`;
  document.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>choose(Number(b.dataset.choice))));
- $('previous').addEventListener('click',()=>{if(position>0)position--;else{round--;position=2;}selected=null;render(true);});
- $('next').addEventListener('click',()=>{if(!state.mastered.includes(id))return;if(id===11){if(state.mastered.length<12){const missing=questions.findIndex((_,i)=>!state.mastered.includes(i));round=Math.floor(missing/3);position=missing%3;render(true);}else{$('finish').scrollIntoView({behavior:'smooth'});$('student-name').focus({preventScroll:true});}return;}if(position<2)position++;else{round++;position=0;}selected=null;render(true);});
- if(focus)$('question-title').focus({preventScroll:true});
+ $('previous').addEventListener('click',()=>{if(id===0){showScreen('intro');return;}if(position>0)position--;else{round--;position=2;}render(true);});
+ $('next').addEventListener('click',()=>{
+  if(!state.mastered.includes(id))return;
+  if(id===11){if(state.mastered.length<12){const missing=questions.findIndex((_,i)=>!state.mastered.includes(i));round=Math.floor(missing/3);position=missing%3;render(true);}else{state.finished=true;save();showScreen('finish');}return;}
+  if(position<2)position++;else{round++;position=0;}render(true);
+ });
+ showScreen('activity',focus);
 }
+$('start').addEventListener('click',()=>{
+ state.started=true;save();if(state.mastered.length===12){state.finished=true;save();update();showScreen('finish');return;}
+ const firstMissing=questions.findIndex((_,i)=>!state.mastered.includes(i));round=Math.floor(firstMissing/3);position=firstMissing%3;render(true);
+});
+$('review').addEventListener('click',()=>{state.finished=false;round=0;position=0;render(true);});
 function choose(i){
  const id=round*3+position,q=questions[id];if(state.mastered.includes(id))return;
- const ok=i===q.answer;selected=i;
+ const ok=i===q.answer;
  document.querySelectorAll('[data-choice]').forEach(b=>{b.classList.remove('correct','incorrect');if(Number(b.dataset.choice)===i)b.classList.add(ok?'correct':'incorrect');});
  $('feedback').innerHTML=`<div class="feedback ${ok?'':'wrong'}"><strong>${ok?'Good call.':'Rethink this decision.'}</strong>${q.why[i]}${ok?'':' Try another choice.'}</div>`;
- if(ok){state.mastered.push(id);save();document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=true);$('next').disabled=false;document.querySelector('.question-meta span:last-child').textContent='✓ MASTERED';update();}
+ if(ok){state.mastered.push(id);save();document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=true);$('next').disabled=false;document.querySelector('.question-meta span:last-child').textContent='✓ COMPLETE';$('next-hint').textContent='Read the feedback, then continue.';update();}
 }
 $('student-name').value=state.name;
 $('student-name').addEventListener('input',e=>{state.name=e.target.value;save();$('cert-preview').hidden=true;});
@@ -68,5 +83,8 @@ $('certificate-form').addEventListener('submit',e=>{
  const url=canvas.toDataURL('image/png');$('cert-image').src=url;$('cert-link').href=url;$('cert-link').download='interview-lab-certificate.png';$('cert-preview').hidden=false;$('cert-link').click();$('download-note').textContent='Certificate ready. If the download did not start, use “Save certificate image” below.';
 });
 $('student-name').addEventListener('input',()=>{$('student-name').setCustomValidity('');});
-$('reset').addEventListener('click',()=>{if(!confirm('Clear your name and all progress for this activity on this browser?'))return;state={mastered:[],name:'',completedOn:null};save();round=0;position=0;$('student-name').value='';$('cert-preview').hidden=true;render();$('workspace').scrollIntoView();});
-render();
+$('reset').addEventListener('click',()=>{if(!confirm('Clear your name and all progress for this activity on this browser?'))return;state={mastered:[],name:'',completedOn:null,started:false,cursor:0,finished:false};save();round=0;position=0;$('student-name').value='';$('cert-preview').hidden=true;update();showScreen('intro');});
+update();
+if(state.finished&&state.mastered.length===12)showScreen('finish',false);
+else if(state.started){const missing=questions.findIndex((_,i)=>!state.mastered.includes(i));const cursor=Math.min(state.cursor,missing<0?11:missing);round=Math.floor(cursor/3);position=cursor%3;render();}
+else showScreen('intro',false);
